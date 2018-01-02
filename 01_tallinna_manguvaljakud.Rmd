@@ -1,0 +1,70 @@
+---
+title: "Tallinna mänguväljakud"
+output: html_notebook
+---
+
+Kraabi info kõigi Tallinna mänguväljakute kohta, et see google maps MyMaps rakendusse importida.
+Aluseks on https://www.manguvaljakud.tallinn.ee/ olev info
+
+```{r setup}
+library(tidyverse)
+library(rvest)
+library(sf)
+library(mapview)
+
+manguvaljakud_url <- "https://www.manguvaljakud.tallinn.ee/"
+```
+
+lae html fail alla
+```{r}
+manguvaljakud_html <- read_html(manguvaljakud_url)
+```
+
+Eralda html-st mänguväljakute koordinaate sisaldav rida ja nime ja linki sisaldav rida
+```{r}
+nimi <- manguvaljakud_html %>% 
+  str_extract_all(., "map.addMarker.*") %>% 
+  .[[1]] %>% 
+  head(286)  # viimased väärtused on valed
+
+koord <- manguvaljakud_html %>% 
+  str_extract_all(., "var latlng.*") %>% 
+  .[[1]] %>% 
+  head(286)  # viimased väärtused on valed
+```
+
+Pane vektorid ühte tabelisse kokku
+```{r}
+manguvaljakud_raw <- data_frame(nimi, koord)
+```
+
+Eralda iga mänguväljaku id, nimetus ja koordinaadid
+```{r}
+manguvaljakud <- manguvaljakud_raw %>% 
+  mutate(lat_lon = str_extract(koord, "(?<=\\().*(?=\\))")) %>% 
+  separate(lat_lon, c("lat", "lon"), ", ") %>% 
+  mutate_at(vars(lat, lon), as.numeric) %>% 
+  mutate(title = str_extract(nimi, "(?<=\\').*(?=\\')"),
+         id = str_extract(nimi, '[0-9]*(?=\\"\\))'),
+         url = str_c("https://www.manguvaljakud.tallinn.ee/object/view/", id)) %>% 
+  select(title, lat, lon, url)
+
+manguvaljakud
+```
+
+Muuda sf objektiks ja kuva kaardil
+```{r}
+manguvaljakud_sf <- manguvaljakud %>% 
+  # muuda sf objektiks nii, et veerud lon ja lat on koordinaatidega
+  # crs väärtus 4326 annab õige projektsiooni
+  st_as_sf(coords = c("lon", "lat"), crs = 4326)
+
+manguvaljakud_sf %>% 
+  mapview()
+```
+
+Kirjuta csv fail, et see Google MyMaps rakendusse laadida
+```{r}
+write_csv(manguvaljakud, "output/manguvaljakud.csv")
+```
+
